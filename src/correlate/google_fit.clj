@@ -1,16 +1,9 @@
 (ns correlate.google-fit
-  (:require [clojure.data.csv :as data.csv]
-            [clojure.java.io :as io]
-            [clj-time.core :as clj-time]
+  (:require [clj-time.core :as clj-time]
             clj-time.format
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [correlate.csv :as csv]))
-
-
-(def ^:dynamic *google-fit-csv-path*
-  "Directory where the Google Fit CSV files are."
-  "resources/Takeout/Fit/Daily Aggregations")
-
 
 ;; -- CSV Parsing --------------------------------------------------------------
 
@@ -22,32 +15,6 @@
       (clj-time/to-time-zone (clj-time/time-zone-for-offset 1))))
 
 
-(def ^:private row-keys
-  [:start-time :end-time :calories-kcal :distance-m :low-latitude-deg
-   :low-longitude-deg :high-latitude-deg :high-longitude-deg :average-speed-m-s
-   :max-speed-m-s :min-speed-m-s :step-count :average-weight-kg :max-weight-kg
-   :min-weight-kg :inactive-duration-ms :walking-duration-ms])
-
-
-(defn- parse-int [x] (when-not (str/blank? x) (Integer/parseInt x)))
-(defn- parse-double [x] (when-not (str/blank? x) (Double/parseDouble x)))
-(defn- read-string-safe [x] (when-not (str/blank? x) (read-string x)))
-
-
-(def ^:private row-parsers
-  "A CSV row has multiple columns. Each column has a specific parsing
-  function as defined in the map below."
-  {:start-time           identity
-   :end-time             identity})
-
-
-(defn- preprocess-row [row]
-  (reduce-kv (fn [m k v]
-               (assoc m k ((get row-parsers k csv/read-string-safe) v)))
-             {}
-             (zipmap row-keys row)))
-
-
 (defn- file-name-without-ending [file-path]
   (-> (str/split file-path #"/")
       last
@@ -55,30 +22,49 @@
       first))
 
 
-(defn- fix-date-strs [file-path row-map]
-  (let [date-str (file-name-without-ending file-path)
-        merge-str-fn #(str date-str "T" %)]
-    (-> row-map
-        (update :start-time merge-str-fn)
-        (update :end-time merge-str-fn))))
+(defn- fix-date-str [file-path time-str]
+  (str (file-name-without-ending file-path)
+       "T" time-str))
 
 
-(defn- parse-datetime-strs [row-map]
-  (-> row-map
-      (update :start-time parse-datetime)
-      (update :end-time parse-datetime)))
+(defn- parse-time [file-path time-str]
+  (-> (fix-date-str file-path time-str)
+      parse-datetime))
 
 
-(defn- read-csv
+(defn- column-descriptions
+  "We need the file path for parsing the time strings as they don't
+  include the dates, therefore we need to generate the
+  `column-descriptions` map for each CSV file we're parsing."
   [file-path]
-  (->> (csv/read file-path)
-       (map preprocess-row)
-       (map (partial fix-date-strs file-path))
-       (map parse-datetime-strs)))
+  [{:key      :start-time
+    :parse-fn (partial parse-time file-path)}
+   {:key      :end-time
+    :parse-fn (partial parse-time file-path)}
+   {:key :calories-kcal}
+   {:key :distance-m}
+   {:key :low-latitude-deg}
+   {:key :low-longitude-deg}
+   {:key :high-latitude-deg}
+   {:key :high-longitude-deg}
+   {:key :average-speed-m-s}
+   {:key :max-speed-m-s}
+   {:key :min-speed-m-s}
+   {:key :step-count}
+   {:key :average-weight-kg}
+   {:key :max-weight-kg}
+   {:key :min-weight-kg}
+   {:key :inactive-duration-ms}
+   {:key :walking-duration-ms}])
 
 
-(defn- all-csv-paths
-  [directory]
+(defn read-csv [csv-path]
+  ;; Beware! Older Google Fit entries are missing the last two
+  ;; fields (`inactive-duration-ms` and `:walking-duration-ms`)!
+  (csv/read-and-parse csv-path (column-descriptions csv-path)))
+
+
+(defn- all-csv-paths [directory]
   (->> (file-seq (io/file directory))
        (filter #(and (.isFile %)
                      ;; there's probably a way more elegant way to do
@@ -89,7 +75,7 @@
        (map #(-> % .toPath .toString))))
 
 
-(defn- read-all-csvs
+(defn read-all-csvs
   "Read all Google Fit CSVs of a specified `directory` and parse
   them. Concatenate the results into one gigantic list, sorted by
   date."
@@ -102,6 +88,7 @@
 (defn- filter-step-counts [row-maps]
   (filter #(some? (:step-count %)) row-maps))
 
+
 (defn- row->event
   "A crazy simplification. Only take the end time and step count."
   [row-map]
@@ -110,6 +97,7 @@
    :event    "steps"
    :value    (:step-count row-map)})
 
+
 (defn- process-rows [row-maps]
   (->> (filter-step-counts row-maps)
        (map row->event)))
@@ -117,16 +105,5 @@
 
 ;; -- Public API ---------------------------------------------------------------
 
-(defn all-events []
-  (process-rows (read-all-csvs *google-fit-csv-path*)))
-
-
-(comment
-  (parse-datetime "2018-09-03T00:15:00.000+01:00")
-  (count (read-all-csvs "resources/Takeout/Fit/Daily Aggregations"))
-  (def csv
-    (read-csv "resources/Takeout/Fit/Daily Aggregations/2018-09-03.csv"))
-  (def events
-    (process-rows csv))
-  (def all (all-events))
-  (count all))
+(defn all-events [directory]
+  (process-rows (read-all-csvs directory)))

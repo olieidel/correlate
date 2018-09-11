@@ -40,9 +40,12 @@
   Where `:key` is a (user-defined) key which describes this value and
   should be the key in the map which is returned and `:parse-fn` is
   the function to run over the value. If `:parse-fn` is not provided,
-  it falls back to `read-string-safe`."
+  it falls back to `read-string-safe`.
+
+  Note: If the counts of `column-descriptions` and `row-entries`
+  differ, the entries of the one with the larger count will be
+  ignored (at the end of the coll)."
   [column-descriptions row-entries]
-  {:pre [(= (count row-entries) (count column-descriptions))]}
   (->> (map (fn [row-entry {:keys [key parse-fn]
                             :or   {parse-fn read-string-safe}}]
               [key (parse-fn row-entry)])
@@ -61,7 +64,7 @@
 
 (defn read-and-parse [csv-path column-descriptions]
   (->> (read csv-path)
-       (process-rows column-descriptions)))
+       (parse-rows column-descriptions)))
 
 
 (comment
