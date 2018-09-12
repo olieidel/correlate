@@ -50,11 +50,13 @@
    events-with-google-fit :brain-fog "brain-fog" 6))
 
 
+;; convert it to vowpal-wabbit format
+(c/to-vw entries-with-google-fit)
+
+
 (c/vw-train-and-eval entries-with-google-fit {:loss-fn :quadratic
                                               :eval-fn c/accuracy})
 
-;; convert it to vowpal-wabbit format
-(c/to-vw entries)
 
 ;; train a vowpal-wabbit model
 (c/vw-train! entries)
