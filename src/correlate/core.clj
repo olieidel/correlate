@@ -14,7 +14,9 @@
 
 ;; -- Magic Numbers ------------------------------------------------------------
 
-(def ^:private *time-zone-offset* 1)
+(def ^:dynamic *time-zone-offset*
+  "Time zone offset from UTC."
+  1)
 
 
 ;; -- CSV Parsing --------------------------------------------------------------
@@ -35,9 +37,9 @@
         (t/from-time-zone (t/time-zone-for-offset *time-zone-offset*)))))
 
 
-(defn- parse-event
-  "Preprocess an event (string). Trim and replace spaces with dashes as
-  otherwise vowpal-wabbit stumbles over them."
+(defn- preprocess-str
+  "Trim and replace spaces with dashes as otherwise vowpal-wabbit
+  stumbles over them."
   [s]
   (-> (str/trim s)
       (str/replace " " "-")))
@@ -45,7 +47,7 @@
 
 (defn- parse-category
   [s]
-  (-> s preprocess-str keyword))
+  (keyword (preprocess-str s)))
 
 
 (def ^:private column-descriptions
@@ -54,7 +56,7 @@
    {:key      :category
     :parse-fn parse-category}
    {:key      :event
-    :parse-fn parse-event}
+    :parse-fn preprocess-str}
    {:key      :value}])
 
 
@@ -63,7 +65,7 @@
   (csv/read-and-parse csv-path column-descriptions))
 
 
-;; -- Advanced Parsing & Preprocessing -----------------------------------------
+;; -- Advanced Processing ------------------------------------------------------
 
 (defn- measurement?
   "Whether a row-entry is a measurement."
@@ -79,8 +81,9 @@
 
 
 (defn filter-measurements
-  "Filter measurements, selected only those measurements which have the
-  same `:category` as `category`."
+  "Filter measurements, selected only those measurements of a certain
+  `category` (keyword) and `event` (string) which have a non-nil
+  `:value`."
   [rows category event]
   (filter #(and (measurement? %)
                 (= category (:category %))
@@ -89,7 +92,9 @@
           rows))
 
 
-(defn counts [xs]
+(defn counts
+  "A very generic counter, similar to pythons `Counter`."
+  [xs]
   (reduce (fn [acc x]
             (if (contains? acc x)
               (update acc x inc)
@@ -152,11 +157,14 @@
 ;; -- Rows -> Entries ----------------------------------------------------------
 
 (defn- reduce-categories
-  "if the row has a value (e.g. step count from google fit), use
+  "Reduce a collection of events to a nested map with the counts or
+  summed values as values.
+
+  If the row has a value (e.g. step count from google fit), use
   that. if we already have an entry for this sort of event, add the
   values.
 
-  if the row has no value, treat it as a `1`, e.g. going to the gym
+  If the row has no value, treat it as a `1`, e.g. going to the gym
   twice in 12 hours is counted as `2`."
   [rows]
   (reduce (fn [acc row]
@@ -172,7 +180,11 @@
           {}
           rows))
 
-(defn reduce-preceding-events
+
+(defn- reduce-preceding-events
+  "Take the preceding events of `row-entry` defined by the time window
+  given by `hours-before`. Reduce them to a map with counts / summed
+  values."
   [rows row-entry hours-before]
   (-> rows
       (filter-rows-hours-before-row-entry row-entry hours-before)
@@ -181,23 +193,31 @@
 
 
 (defn filter-reduce-preceding-events
+  "For an event defined by `selected-category` and `selected-event`,
+  create a list of tuples. Each tuple has the actual measurement as
+  first entry and a map of (reduced) preceding events with their
+  counts / summed values as values."
   [rows selected-category selected-event hours-before]
   (let [measurements (filter-measurements rows selected-category selected-event)]
     (for [measurement measurements]
       [measurement
        (reduce-preceding-events rows measurement hours-before)])))
 
+
 ;; -- Re-Processing ------------------------------------------------------------
 
 (def logistic-mapping
   "Mapping of values to `1` and `-1`. Used when converting the
-  measurements in preparation for a logistic regression."
+  measurements in preparation for a logistic regression. In the case
+  below, values 0 through 3 would map to -1, values 4 and 5 would map
+  to 1."
   {0 -1
    1 -1
    2 -1
    3 -1
    4 1
    5 1})
+
 
 (defn rescale-values
   "Apply a new scale to the values."
@@ -208,34 +228,17 @@
   ;; want to look up a value in a map (`get` would be more explicit)
   (map #(update % 0 update :value logistic-mapping) entries))
 
+
 (defn round-predictions
-  [predictions {:keys [logistic?]}]
-  (let [round-fn (if logistic?
-                   #(if (>= % 0) 1 -1)
-                   #(Math/round %))]
-    (map round-fn predictions)))
-
-
-;; -- Vowpal-Wabbit Export -----------------------------------------------------
-
-(defn- to-vw* [entries {:keys [counts?]
-                        :or {counts? true}}]
-  (for [entry entries]
-    (let [target-val (-> entry first :value)
-          reduced-categories (second entry)]
-      (str target-val " "
-           (reduce-kv (fn [s k reduced-events]
-                        (str s "|" (name k) " "
-                             (reduce-kv (fn [s event count]
-                                          (if counts?
-                                            (str s event ":" count " ")
-                                            (str s event " ")))
-                                        "" reduced-events)))
-                      "" reduced-categories)))))
-
-
-(defn to-vw [entries opts]
-  (str/join "\n" (to-vw* entries opts)))
+  "Given a collection of `predictions` which are floats, round each
+  value to the nearest integer. If it's a logistic
+  regression (`:logistic?` set to `true`), round them to 1 or -1."
+  ([predictions] (round-predictions predictions {}))
+  ([predictions {:keys [logistic?]}]
+   (let [round-fn (if logistic?
+                    #(if (>= % 0) 1 -1)
+                    #(Math/round %))]
+     (map round-fn predictions))))
 
 
 ;; -- Performance Metrics ------------------------------------------------------
@@ -267,6 +270,7 @@
                      (assoc-in acc [ground-truth-val prediction] 1)))
                  {}))))
 
+
 (defn accuracy
   "The accuracy is defined as the count of correct predictions divded by
   the count of all predictions."
@@ -281,6 +285,7 @@
                 :total   0}
                (confusion-matrix entries predictions))]
     (double (/ (:correct stats) (:total stats)))))
+
 
 (defn balanced-accuracy
   "The balanced accuracy calculates the accuracy for each unique ground
@@ -307,7 +312,22 @@
     ;; truth values which is equal to the count of keys in `stats`
     (double (/ (reduce + accuracies) (count stats)))))
 
+
 (defn split
+  "Split `coll` into one or more collections, given by
+  `fractions`. `fractions` is a map of keywords to fractions. Very
+  cryptical! An example should make it very clear:
+
+  (split {:train 0.8 :test 0.2} [0 1 2 3 4])
+
+  Would return a map with the keys defined above, sampling randomly
+  from the collection according to the defined fractions:
+
+  {:train [0 4 3]
+   :test  [1 2]}
+
+  You are not limited to use `:train` and `:test` as keys, you can use
+  any and as many as you like!"
   [fractions coll]
   (let [shuffled-coll   (shuffle coll)
         absolute-counts (->> (map (fn [[k v]] [k (Math/round (* v (count coll)))])
@@ -325,29 +345,77 @@
            (assoc result description (take absolute-count remaining-coll))))))))
 
 
+;; -- Vowpal-Wabbit Export -----------------------------------------------------
+
+(defn- to-vw*
+  "Given a collection of `entries`, return a collection a strings where
+  each string is a line in the vowpal-wabbit format. If `:counts?` is
+  true, include the counts (more precisely, the values) of each
+  respective event."
+  [entries {:keys [counts?]
+            :or {counts? true}}]
+  (for [entry entries]
+    (let [target-val (-> entry first :value)
+          reduced-categories (second entry)]
+      (str target-val " |"
+           (->> (reduce-kv (fn [acc k reduced-events]
+                             (conj acc
+                                   (str (name k) " "
+                                        (reduce-kv (fn [s event count]
+                                                     (if counts?
+                                                       (str s event ":" count " ")
+                                                       (str s event " ")))
+                                                   "" reduced-events))))
+                           [] reduced-categories)
+                (interpose "|")
+                str/join)))))
+
+
+(defn to-vw
+  "Convert a collection of entries to the vowpal-wabbit format."
+  ([entries] (to-vw entries {}))
+  ([entries opts]
+   (str/join "\n" (to-vw* entries opts))))
+
+
 ;; -- Vowpal-Wabbit Execution --------------------------------------------------
 
-(defn vw-train! [entries {:keys [loss-function]
-                          :or   {loss-function :squared}}]
-  (let [vw-input  (to-vw entries {})
-        ;; model will be saved to `model` file
-        cmd       ["vw"
-                   "--passes" "20"
-                   "--loss_function" (name loss-function)
-                   "-f" "model"
-                   "--cache_file" "cache"
-                   ;; "--holdout_off"
-                   "--kill_cache"]
-        sh-args   (into cmd [:in vw-input
-                             :dir "resources"])
-        sh-result (apply sh sh-args)]
-    (update sh-result :err str/split-lines)))
+(defn vw-train!
+  "Train Vowpal-Wabbit with the (magic) parameters below. The model is
+  saved to the file `resources/model`, the cache file is saved to
+  `resources/cache`. An existing cache file is deleted prior to
+  training.
+
+  Returns the vowpal-wabbit output as a vector of strings."
+  ([entries] (vw-train! entries {}))
+  ([entries {:keys [loss-fn]
+             :or   {loss-fn :squared}}]
+   (let [vw-input  (to-vw entries {})
+         ;; model will be saved to `model` file
+         cmd       ["vw"
+                    "--passes" "20"
+                    "--loss_function" (name loss-fn)
+                    "-f" "model"
+                    "--cache_file" "cache"
+                    ;; "--holdout_off"
+                    "--kill_cache"]
+         sh-args   (into cmd [:in vw-input
+                              :dir "resources"])
+         sh-result (apply sh sh-args)]
+     (update sh-result :err str/split-lines))))
 
 
-(defn vw-eval [entries]
+(defn vw-eval
+  "Evaluate the Vowpal-Wabbit model. Important! It is implicitly assumed
+  that the model file is `resources/model`. That's the case if you
+  train with `vw-train!`.
+
+  Returns a vector of floats (the predicted values for `entries`)."
+  [entries]
   (let [vw-input          (to-vw entries {})
         cmd               ["vw"
-                           "-f" "model"
+                           "-i" "model"
+                           "-t"
                            "-p" "/dev/stdout"]
         sh-args           (into cmd [:in vw-input
                                      :dir "resources"])
@@ -359,23 +427,39 @@
          (map #(Double/parseDouble %)))))
 
 
-(defn vw-train-and-eval [entries {:keys [loss-function]
-                                  :as   train-opts}]
+(defn vw-train-and-eval
+  "Split the dataset (`entries`) into a training set (80%) and test
+  set (20%), train Vowpal-Wabbit on the training set, let the model
+  predict results from the test set and calculate the `accuracy` as
+  evaluation metric.
+
+  Alternatively, you can use a different `:eval-fn`. Another
+  recommended one (and implemented here) is `balanced-accuracy`.
+
+  `:loss-function` could either be `:quadratic` or
+  `:logistic`. Vowpal-Wabbit supports a few more which I didn't test."
+  [entries {:keys [loss-fn eval-fn]
+            :or   {eval-fn accuracy}
+            :as   train-opts}]
   (let [{:keys [train test]} (split {:train 0.8 :test 0.2} entries)
         _                    (vw-train! train train-opts)
         process-predictions  (fn [predictions]
                                (round-predictions
                                 predictions
-                                {:logistic? (= :logistic loss-function)}))
+                                {:logistic? (= :logistic loss-fn)}))
         train-predictions    (process-predictions (vw-eval train))
         test-predictions     (process-predictions (vw-eval test))]
-    {:train (balanced-accuracy train train-predictions)
-     :test  (balanced-accuracy test test-predictions)}))
+    {:train (eval-fn train train-predictions)
+     :test  (eval-fn test test-predictions)}))
 
 
 ;; -- Analysis -----------------------------------------------------------------
 
 (defn scatter-plot-from-tuples
+  "Given a collection of tuples where each tuple represents a [x y]
+  pair, plot them in a scatterplot with incanter. Incanter may have
+  convenience features for this but I didn't have enough time to go
+  through the documentation"
   ([tuples] (scatter-plot-from-tuples tuples {}))
   ([tuples {:keys [title x-label y-label]}]
    (incanter.core/view
@@ -417,6 +501,7 @@
          [(get-in events-m [:emfit-qs emfit-key] 0)
           (:value measurement)])
        entries))
+
 
 (defn sleep-duration [entries] (sleep-data entries "duration"))
 
@@ -469,9 +554,8 @@
 (comment
   (read-csv "resources/correlate.events.2.csv")
   (split {:train 0.6 :test 0.2 :val 0.2} (range 10))
-  (def csv-data (csv/read "resources/correlate.events.csv" {:skip-header? true}))
-  (def csv (read-csv "resources/correlate.events.2.csv" {:skip-header? true}))
-  (def rows (concat (preprocess-rows csv)
+  (def csv-data (read-csv "resources/correlate.events.csv"))
+  (def rows (concat (preprocess-rows csv-data)
                     (google-fit/all-events)
                     (emfit-qs/all-events)))
 

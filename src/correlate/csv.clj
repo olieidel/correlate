@@ -65,11 +65,3 @@
 (defn read-and-parse [csv-path column-descriptions]
   (->> (read csv-path)
        (parse-rows column-descriptions)))
-
-
-(comment
-  (process-rows [{:key :first :parse-fn read-string-safe}
-                 {:key :second :parse-fn read-string-safe}
-                 {:key :n :parse-fn read-string-safe}]
-                [["foozoo" "baza" "10"]
-                 ["foo" "bar" "3"]]))
