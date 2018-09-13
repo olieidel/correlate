@@ -1,36 +1,23 @@
 # correlate
 
-FIXME: description
+My [ClojuTRE][clojutre] 2018 talk: "Optimizing My Mental Focus with
+Machine Learning and Clojure"
 
-## Installation
+## How to use
 
-Download from http://example.com/FIXME.
+Ugh, even though my talk is done and the code is now properly
+documented, I ran out of time and didn't manage to write the readme!
+So in the meantime, please refer to the `clojutre_talk.clj` file for
+now and feel free to message me repeatedly if things are unclear :)
 
-## Usage
+I'll do my best to create a small tutorial with some sample data in
+the next week.
 
-FIXME: explanation
-
-    $ java -jar correlate-0.1.0-standalone.jar [args]
-
-## Options
-
-FIXME: listing of options this app accepts.
-
-## Examples
-
-...
-
-### Bugs
-
-...
-
-### Any Other Sections
-### That You Think
-### Might be Useful
 
 ## License
 
-Copyright © 2018 FIXME
+Copyright © 2018 Oliver Eidel
 
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+Licensed under the [MIT License](LICENSE.md).
+
+clojutre: https://clojutre.org/2018/
