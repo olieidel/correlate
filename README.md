@@ -20,4 +20,4 @@ Copyright © 2018 Oliver Eidel
 
 Licensed under the [MIT License](LICENSE.md).
 
-clojutre: https://clojutre.org/2018/
+[clojutre]: https://clojutre.org/2018/
