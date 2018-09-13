@@ -5,17 +5,69 @@
             [correlate.google-fit :as google-fit]))
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ;; -- Food via Google Sheets, first try ----------------------------------------
 
+;; where's the csv file?
 (def google-sheets-file
-  "CSV file, second try"
   "resources/correlate.events.csv")
 
-;; read some csv rows
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;; parse some csv rows
 (csv/read google-sheets-file)
 
-;; parse
+;; actually save them
 (def events (c/read-csv google-sheets-file))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -36,40 +88,69 @@
   "Directory of the Google Fit CSV files."
   "resources/Takeout/Fit/Daily Aggregations")
 
-
+;; let's parse some google fit events
 (def google-fit-events
   (google-fit/all-events google-fit-directory))
 
-;; parse
+;; add them to the other events!
 (def events-with-google-fit (concat events
                                     google-fit-events))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ;; reduce
 (def entries-with-google-fit
   (c/filter-reduce-preceding-events
    events-with-google-fit :brain-fog "brain-fog" 6))
 
-
 ;; convert it to vowpal-wabbit format
 (c/to-vw entries-with-google-fit)
 
-
+;; train and check accuracy
 (c/vw-train-and-eval entries-with-google-fit {:loss-fn :quadratic
                                               :eval-fn c/accuracy})
 
 
-;; train a vowpal-wabbit model
-(c/vw-train! entries)
 
-;; evaluate on the training set (does it work at all?)
-(c/vw-eval entries)
 
-;; woops! we should be rounding, right?
-(c/accuracy entries (c/round-predictions (c/vw-eval entries)))
 
-;; we should actually be using a test set
-(c/vw-train-and-eval entries {:loss-fn :quadratic
-                              :eval-fn c/accuracy})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ;; -- Emfit QS -----------------------------------------------------------------
@@ -78,9 +159,32 @@
   "Directory of the Emfit QS CSV files."
   "resources/00244B-ed-2018-07-01--2018-09-09-1414c28a")
 
-
 (def emfit-qs-data
   (emfit-qs/all-events emfit-qs-directory))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ;; -- v2 Google Sheets with Stroop Test ----------------------------------------
@@ -105,6 +209,10 @@
  (c/sleep-data entries "duration-awake")
  {:x-label "Duration awake (h)"
   :y-label "Stroop Test Duration (s)"})
+
+
+
+
 
 
 
@@ -148,3 +256,18 @@
 (c/confusion-matrix rescaled-entries predictions)
 
 (spit "resources/brain-fog-logistic-temp.txt" (c/to-vw rescaled-entries))
+
+
+
+;; train a vowpal-wabbit model
+(c/vw-train! entries)
+
+;; evaluate on the training set (does it work at all?)
+(c/vw-eval entries)
+
+;; woops! we should be rounding, right?
+(c/accuracy entries (c/round-predictions (c/vw-eval entries)))
+
+;; we should actually be using a test set
+(c/vw-train-and-eval entries {:loss-fn :quadratic
+                              :eval-fn c/accuracy})
