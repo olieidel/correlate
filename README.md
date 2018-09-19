@@ -6,7 +6,7 @@ mental focus.
 ## Talk
 
 This was the underlying code for my talk at [ClojuTRE][clojutre] 2018
-titled *Optimizing My Mental Focus with Machine Learning and Clojure*
+titled *Optimizing My Mental Focus with Machine Learning and Clojure*.
 
  * [Video of the talk on YouTube][clojutre-video]
  * [Presentation slides with short videos][clojutre-slides]
@@ -113,5 +113,6 @@ Licensed under the [MIT License](LICENSE.md).
 [clojutre-slides]: https://drive.google.com/open?id=1jocY8plr42JTO_5gIQwIcQQkCbBOPcBV9nz7BmttGcI
 [weight-loss]: https://github.com/arielf/weight-loss
 [vowpal-wabbit]: https://github.com/JohnLangford/vowpal_wabbit/wiki
+[tutorial-file]: src/correlate/tutorial.clj
 [spreadsheet-template]: https://docs.google.com/spreadsheets/d/15yqZN8x3E-xXO2mqDMQ72gv6JqoRGaEWVktMRDTgWSQ/edit?usp=sharing
 [stroop-effect]: https://en.wikipedia.org/wiki/Stroop_effect
